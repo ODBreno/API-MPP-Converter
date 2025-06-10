@@ -47,5 +47,5 @@ jobs:
           push: true
           # Nomes (tags) que a imagem terá. É uma boa prática ter várias.
           tags: |
-            ghcr.io/ODBreno/api-mpp-converter:latest
-            ghcr.io/ODBreno/api-mpp-converter:${{ github.sha }}
+            ghcr.io/odbreno/api-mpp-converter:latest
+            ghcr.io/odbreno/api-mpp-converter:${{ github.sha }}
