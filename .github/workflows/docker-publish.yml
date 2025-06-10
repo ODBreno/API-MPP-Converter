@@ -1,0 +1,51 @@
+# Nome do Workflow que aparecerá na aba "Actions" do GitHub
+name: Build and Publish Docker Image
+
+# Define quando este workflow será executado
+on:
+  # Executa toda vez que um novo código for enviado (push) para a branch 'main'
+  push:
+    branches:
+      - main  # <-- CORRIGIDO: para a sua branch 'main'
+
+  # Permite que você execute este workflow manualmente pela interface do GitHub
+  workflow_dispatch:
+
+# Define as permissões que o token automático do GitHub terá durante a execução
+permissions:
+  contents: read      # Permissão para ler o código do repositório
+  packages: write     # Permissão para escrever (publicar) pacotes/imagens
+
+jobs:
+  build-and-push:
+    # O trabalho rodará em uma máquina virtual Linux (Ubuntu) fornecida pelo GitHub
+    runs-on: ubuntu-latest
+
+    steps:
+      # Passo 1: Clona o código do seu repositório para a máquina virtual
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Passo 2: Faz o login no registro de containers do GitHub (ghcr.io)
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          # Usa o usuário que iniciou o workflow
+          username: ${{ github.actor }}
+          # Usa o GITHUB_TOKEN, um token temporário e seguro que o GitHub gera para a Action.
+          # As permissões que definimos acima dão poder a este token.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Passo 3: Constrói a imagem Docker e a publica no ghcr.io
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          # Contexto: a raiz do repositório (onde está o Dockerfile)
+          context: .
+          # Informa à Action para fazer o push após construir a imagem
+          push: true
+          # Nomes (tags) que a imagem terá. É uma boa prática ter várias.
+          tags: |
+            ghcr.io/ODBreno/API-MPP-Converter:latest
+            ghcr.io/ODBreno/API-MPP-Converter:${{ github.sha }}
