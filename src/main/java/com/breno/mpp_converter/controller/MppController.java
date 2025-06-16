@@ -1,11 +1,11 @@
 package com.breno.mpp_converter.controller;
 
-import com.breno.mpp_converter.dto.TaskDTO;
+import com.breno.mpp_converter.service.OdooService;
 import net.sf.mpxj.ProjectFile;
-import net.sf.mpxj.Relation;
 import net.sf.mpxj.Task;
 import net.sf.mpxj.reader.ProjectReader;
 import net.sf.mpxj.reader.ProjectReaderUtility;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,62 +16,98 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.util.ArrayList;
+import java.text.SimpleDateFormat;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api")
 public class MppController {
 
-    @PostMapping("/mpp-to-json")
-    public ResponseEntity<List<TaskDTO>> convertMppToJson(@RequestParam("file") MultipartFile multipartFile) {
-        if (multipartFile.isEmpty() || multipartFile.getOriginalFilename() == null
-                || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
-            return ResponseEntity.badRequest().build();
+    @Autowired
+    private OdooService odooService;
+
+    // Define o formato de data que o Odoo aceita
+    private final SimpleDateFormat odooDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+
+    @PostMapping("/create-odoo-project")
+    public ResponseEntity<String> createOdooProjectFromFile(@RequestParam("file") MultipartFile multipartFile) {
+        if (multipartFile.isEmpty() || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
+            return ResponseEntity.badRequest().body("Arquivo inválido ou não é .mpp");
         }
 
         File file = null;
         try {
+            // 1. Ler o arquivo MPP
             file = File.createTempFile("temp-mpp-", ".mpp");
-            try (FileOutputStream fos = new FileOutputStream(file)) {
-                fos.write(multipartFile.getBytes());
-            }
-
+            multipartFile.transferTo(file);
             ProjectReader reader = ProjectReaderUtility.getProjectReader(file.getAbsolutePath());
-            ProjectFile project = reader.read(file.getAbsolutePath());
+            ProjectFile projectFile = reader.read(file.getAbsolutePath());
 
-            List<TaskDTO> taskList = new ArrayList<>();
-            for (Task task : project.getTasks()) {
-                TaskDTO dto = new TaskDTO();
-                dto.setId(task.getUniqueID());
-                dto.setName(task.getName());
-                dto.setStartDate(task.getStart());
-                dto.setFinishDate(task.getFinish());
-                dto.setDuration(task.getDuration().toString());
-                dto.setPercentageComplete(
-                        task.getPercentageComplete() != null ? task.getPercentageComplete().doubleValue() : 0.0);
+            // 2. Conectar-se ao Odoo
+            odooService.connect();
 
-                if (task.getPredecessors() != null) {
-                    List<Integer> predecessorIds = task.getPredecessors().stream()
-                            .map(Relation::getTargetTask)
-                            .map(Task::getUniqueID)
-                            .collect(Collectors.toList());
-                    dto.setPredecessors(predecessorIds);
+            // 3. Mapa para relacionar ID do MPP -> ID do Odoo
+            Map<Integer, Integer> mppToOdooIdMap = new HashMap<>();
+
+            // 4. Criar o Projeto Principal
+            Task projectTask = projectFile.getTasks().stream()
+                    .filter(t -> t.getParentTask() != null && t.getParentTask().getUniqueID() == 0)
+                    .findFirst()
+                    .orElseThrow(
+                            () -> new RuntimeException("Tarefa do projeto principal (filha do ID 0) não encontrada."));
+
+            Map<String, Object> projectValues = new HashMap<>();
+            projectValues.put("name", projectTask.getName());
+            int odooProjectId = odooService.create("project.project", projectValues);
+            mppToOdooIdMap.put(projectTask.getUniqueID(), odooProjectId); // Adiciona o próprio projeto ao mapa
+            System.out.println("Projeto '" + projectTask.getName() + "' criado com ID: " + odooProjectId);
+
+            // 5. Lógica de Passes para criar tarefas e subtarefas
+            // Ordenamos por nível para garantir que os pais sejam criados antes dos filhos
+            List<Task> sortedTasks = projectFile.getTasks().stream()
+                    .filter(t -> t.getUniqueID() != 0 && t.getUniqueID() != projectTask.getUniqueID()) // Ignora o root
+                                                                                                       // e o projeto
+                    .sorted((t1, t2) -> Integer.compare(t1.getOutlineLevel(), t2.getOutlineLevel()))
+                    .collect(Collectors.toList());
+
+            for (Task task : sortedTasks) {
+                Map<String, Object> taskValues = new HashMap<>();
+                taskValues.put("name", task.getName());
+                taskValues.put("project_id", odooProjectId); // Todas as tarefas pertencem a este projeto
+
+                // Formata as datas para o padrão do Odoo
+                if (task.getFinish() != null) {
+                    taskValues.put("date_deadline", odooDateFormat.format(task.getFinish()));
+                }
+                if (task.getStart() != null) {
+                    taskValues.put("date_start", odooDateFormat.format(task.getStart()));
                 }
 
-                Task parentTask = task.getParentTask();
-                if (parentTask != null) {
-                    dto.setParentId(parentTask.getUniqueID());
+                // Define a hierarquia (tarefa pai)
+                if (task.getParentTask() != null) {
+                    Integer parentOdooId = mppToOdooIdMap.get(task.getParentTask().getUniqueID());
+                    if (parentOdooId != null) {
+                        // O parentId de uma tarefa no Odoo é o ID da tarefa pai, não do projeto.
+                        taskValues.put("parent_id", parentOdooId);
+                    }
                 }
 
-                taskList.add(dto);
+                // Cria a tarefa no Odoo
+                int newOdooTaskId = odooService.create("project.task", taskValues);
+                mppToOdooIdMap.put(task.getUniqueID(), newOdooTaskId); // Salva o novo mapeamento
+                System.out.println("  - Tarefa '" + task.getName() + "' criada com ID: " + newOdooTaskId);
             }
-            return ResponseEntity.ok(taskList);
+
+            // Aqui seria o passo para criar as dependências (predecessors), se necessário.
+
+            return ResponseEntity.ok("Projeto e tarefas criados com sucesso no Odoo! ID do Projeto: " + odooProjectId);
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro: " + e.getMessage());
         } finally {
             if (file != null && file.exists()) {
                 file.delete();

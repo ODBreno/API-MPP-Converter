@@ -6,12 +6,13 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <version>3.3.0</version>
-        <relativePath/> </parent>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
     <groupId>com.breno</groupId>
     <artifactId>mpp-converter</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>mpp-converter</name>
-    <description>API para converter arquivos MPP para JSON</description>
+    <description>API para converter MPP e criar no Odoo</description>
     <properties>
         <java.version>17</java.version>
     </properties>
@@ -21,10 +22,18 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
 
+        <!-- Biblioteca para ler arquivos .mpp -->
         <dependency>
             <groupId>net.sf.mpxj</groupId>
             <artifactId>mpxj</artifactId>
             <version>10.16.0</version>
+        </dependency>
+
+        <!-- ADICIONADO: Biblioteca para comunicação XML-RPC com o Odoo -->
+        <dependency>
+            <groupId>org.apache.xmlrpc</groupId>
+            <artifactId>xmlrpc-client</artifactId>
+            <version>3.1.3</version>
         </dependency>
 
         <dependency>
