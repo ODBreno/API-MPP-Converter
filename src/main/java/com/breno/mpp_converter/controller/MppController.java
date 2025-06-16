@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
-import java.io.FileOutputStream;
 import java.text.SimpleDateFormat;
 import java.util.HashMap;
 import java.util.List;
@@ -34,7 +33,8 @@ public class MppController {
 
     @PostMapping("/create-odoo-project")
     public ResponseEntity<String> createOdooProjectFromFile(@RequestParam("file") MultipartFile multipartFile) {
-        if (multipartFile.isEmpty() || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
+        if (multipartFile.isEmpty() || multipartFile.getOriginalFilename() == null
+                || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
             return ResponseEntity.badRequest().body("Arquivo inválido ou não é .mpp");
         }
 
@@ -53,55 +53,72 @@ public class MppController {
             Map<Integer, Integer> mppToOdooIdMap = new HashMap<>();
 
             // 4. Criar o Projeto Principal
-            Task projectTask = projectFile.getTasks().stream()
+            // A tarefa do projeto é a primeira filha da tarefa raiz (ID 0)
+            Task projectHeaderTask = projectFile.getTasks().stream()
                     .filter(t -> t.getParentTask() != null && t.getParentTask().getUniqueID() == 0)
                     .findFirst()
                     .orElseThrow(
                             () -> new RuntimeException("Tarefa do projeto principal (filha do ID 0) não encontrada."));
 
             Map<String, Object> projectValues = new HashMap<>();
-            projectValues.put("name", projectTask.getName());
+            projectValues.put("name", projectHeaderTask.getName());
             int odooProjectId = odooService.create("project.project", projectValues);
-            mppToOdooIdMap.put(projectTask.getUniqueID(), odooProjectId); // Adiciona o próprio projeto ao mapa
-            System.out.println("Projeto '" + projectTask.getName() + "' criado com ID: " + odooProjectId);
+
+            // Colocamos o ID do projeto no mapa para as tarefas de primeiro nível se
+            // conectarem a ele
+            mppToOdooIdMap.put(projectHeaderTask.getUniqueID(), odooProjectId);
+            System.out.println("Projeto '" + projectHeaderTask.getName() + "' criado com ID Odoo: " + odooProjectId);
 
             // 5. Lógica de Passes para criar tarefas e subtarefas
-            // Ordenamos por nível para garantir que os pais sejam criados antes dos filhos
+            // A chave aqui é ordenar as tarefas por "nível de estrutura".
+            // Isso garante que uma tarefa-mãe sempre será processada antes de suas filhas.
             List<Task> sortedTasks = projectFile.getTasks().stream()
-                    .filter(t -> t.getUniqueID() != 0 && t.getUniqueID() != projectTask.getUniqueID()) // Ignora o root
-                                                                                                       // e o projeto
+                    .filter(t -> t.getUniqueID() != 0 && t.getUniqueID() != projectHeaderTask.getUniqueID()) // Ignora o
+                                                                                                             // root e o
+                                                                                                             // próprio
+                                                                                                             // projeto
                     .sorted((t1, t2) -> Integer.compare(t1.getOutlineLevel(), t2.getOutlineLevel()))
                     .collect(Collectors.toList());
+
+            System.out.println("Iniciando criação de " + sortedTasks.size() + " tarefas...");
 
             for (Task task : sortedTasks) {
                 Map<String, Object> taskValues = new HashMap<>();
                 taskValues.put("name", task.getName());
                 taskValues.put("project_id", odooProjectId); // Todas as tarefas pertencem a este projeto
 
-                // Formata as datas para o padrão do Odoo
+                // Formata a data de prazo final
                 if (task.getFinish() != null) {
                     taskValues.put("date_deadline", odooDateFormat.format(task.getFinish()));
-                }
-                if (task.getStart() != null) {
-                    taskValues.put("date_start", odooDateFormat.format(task.getStart()));
                 }
 
                 // Define a hierarquia (tarefa pai)
                 if (task.getParentTask() != null) {
-                    Integer parentOdooId = mppToOdooIdMap.get(task.getParentTask().getUniqueID());
+                    // Pega o ID MPP da tarefa-mãe
+                    Integer parentMppId = task.getParentTask().getUniqueID();
+                    // Procura no nosso mapa o ID correspondente no Odoo
+                    Integer parentOdooId = mppToOdooIdMap.get(parentMppId);
+
+                    // Se encontrarmos o pai no mapa (ele já foi criado), definimos a relação
                     if (parentOdooId != null) {
-                        // O parentId de uma tarefa no Odoo é o ID da tarefa pai, não do projeto.
-                        taskValues.put("parent_id", parentOdooId);
+                        // Para tarefas de primeiro nível, o pai será o projeto (e o campo é
+                        // 'project_id', já setado)
+                        // Para subtarefas, o pai é outra tarefa, e o campo é 'parent_id'.
+                        // A tarefa-mãe de uma subtarefa não pode ser o próprio projeto.
+                        if (task.getParentTask().getUniqueID() != projectHeaderTask.getUniqueID()) {
+                            taskValues.put("parent_id", parentOdooId);
+                        }
                     }
                 }
 
                 // Cria a tarefa no Odoo
                 int newOdooTaskId = odooService.create("project.task", taskValues);
-                mppToOdooIdMap.put(task.getUniqueID(), newOdooTaskId); // Salva o novo mapeamento
-                System.out.println("  - Tarefa '" + task.getName() + "' criada com ID: " + newOdooTaskId);
+                // Adiciona a tarefa recém-criada ao nosso mapa para que suas filhas possam
+                // encontrá-la
+                mppToOdooIdMap.put(task.getUniqueID(), newOdooTaskId);
+                System.out.println("  - Tarefa '" + task.getName() + "' (MPP ID: " + task.getUniqueID()
+                        + ") criada com ID Odoo: " + newOdooTaskId);
             }
-
-            // Aqui seria o passo para criar as dependências (predecessors), se necessário.
 
             return ResponseEntity.ok("Projeto e tarefas criados com sucesso no Odoo! ID do Projeto: " + odooProjectId);
 
@@ -109,7 +126,7 @@ public class MppController {
             e.printStackTrace();
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro: " + e.getMessage());
         } finally {
-            if (file != null && file.exists()) {
+            if (file != null) {
                 file.delete();
             }
         }
