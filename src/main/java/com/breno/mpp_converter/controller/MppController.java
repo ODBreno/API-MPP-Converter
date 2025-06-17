@@ -35,11 +35,14 @@ public class MppController {
     // Define o formato de data que o Odoo aceita
     private final SimpleDateFormat odooDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
+    // ===== MUDANÇA AQUI: de ResponseEntity<String> para ResponseEntity<?> =====
     @PostMapping("/create-odoo-project")
-    public ResponseEntity<String> createOdooProjectFromFile(@RequestParam("file") MultipartFile multipartFile) {
+    public ResponseEntity<?> createOdooProjectFromFile(@RequestParam("file") MultipartFile multipartFile) {
         if (multipartFile.isEmpty() || multipartFile.getOriginalFilename() == null
                 || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
-            return ResponseEntity.badRequest().body("Arquivo inválido ou não é .mpp");
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("error", "Arquivo inválido ou não é .mpp");
+            return ResponseEntity.badRequest().body(errorResponse);
         }
 
         File file = null;
@@ -102,7 +105,8 @@ public class MppController {
                 System.out.println("  - Tarefa '" + task.getName() + "' (MPP ID: " + task.getUniqueID()
                         + ") criada com ID Odoo: " + newOdooTaskId);
             }
-            // 6. Criar dependências entre tarefas
+
+            // 6. Criar Dependência de tarefas
             System.out.println("\nIniciando criação de dependências entre tarefas...");
             for (Task task : sortedTasks) {
                 // Pega a lista de predecessoras do arquivo MPP
@@ -137,12 +141,21 @@ public class MppController {
                 }
             }
 
-            return ResponseEntity.ok(
-                    "Projeto, tarefas, hierarquia e dependências criados com sucesso! ID do Projeto: " + odooProjectId);
+            // Cria um corpo de resposta JSON para o sucesso
+            Map<String, Object> successResponse = new HashMap<>();
+            successResponse.put("status", "sucesso");
+            successResponse.put("message", "Projeto, tarefas, hierarquia e dependências criados com sucesso!");
+            successResponse.put("odooProjectId", odooProjectId);
+
+            return ResponseEntity.ok(successResponse);
 
         } catch (Exception e) {
             e.printStackTrace();
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Erro: " + e.getMessage());
+            // Cria um corpo de resposta JSON para o erro
+            Map<String, String> errorResponse = new HashMap<>();
+            errorResponse.put("status", "erro");
+            errorResponse.put("message", e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(errorResponse);
         } finally {
             if (file != null) {
                 file.delete();
