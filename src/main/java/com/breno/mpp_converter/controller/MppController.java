@@ -36,8 +36,9 @@ public class MppController {
 
     @PostMapping("/create-odoo-project")
     public ResponseEntity<?> createOdooProjectFromFile(@RequestParam("file") MultipartFile multipartFile) {
-        if (multipartFile.isEmpty() || multipartFile.getOriginalFilename() == null || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
-             Map<String, String> errorResponse = new HashMap<>();
+        if (multipartFile.isEmpty() || multipartFile.getOriginalFilename() == null
+                || !multipartFile.getOriginalFilename().endsWith(".mpp")) {
+            Map<String, String> errorResponse = new HashMap<>();
             errorResponse.put("error", "Arquivo inválido ou não é .mpp");
             return ResponseEntity.badRequest().body(errorResponse);
         }
@@ -61,7 +62,6 @@ public class MppController {
                 System.out.println("Departamento extraído do nome do arquivo: " + departmentTagName);
             }
 
-
             // 4. Criar o Projeto Principal
             Task projectHeaderTask = projectFile.getTasks().stream()
                     .filter(t -> t.getParentTask() != null && t.getParentTask().getUniqueID() == 0)
@@ -81,11 +81,9 @@ public class MppController {
                 System.out.println("Associando o projeto com a tag '" + departmentTagName + "' (ID: " + tagId + ")");
             }
 
-
             int odooProjectId = odooService.create("project.project", projectValues);
             mppToOdooIdMap.put(projectHeaderTask.getUniqueID(), odooProjectId);
             System.out.println("Projeto '" + projectHeaderTask.getName() + "' criado com ID Odoo: " + odooProjectId);
-            .
             System.out.println("Criando estágios para o projeto...");
             Integer plannedStageId = null;
             List<String> stageNames = Arrays.asList("Planejadas", "Em andamento", "Em revisão", "Concluídas", "Outras");
@@ -93,22 +91,22 @@ public class MppController {
             for (String stageName : stageNames) {
                 Map<String, Object> stageValues = new HashMap<>();
                 stageValues.put("name", stageName);
-                stageValues.put("project_ids", Collections.singletonList(Arrays.asList(6, 0, Collections.singletonList(odooProjectId))));
+                stageValues.put("project_ids",
+                        Collections.singletonList(Arrays.asList(6, 0, Collections.singletonList(odooProjectId))));
                 int newStageId = odooService.create("project.task.type", stageValues);
                 if ("Planejadas".equals(stageName)) {
                     plannedStageId = newStageId;
                 }
             }
 
-            // ... (Código para criar tarefas e o resto) ...
             List<Task> sortedTasks = projectFile.getTasks().stream()
-                .filter(t -> t.getUniqueID() != 0 && t.getUniqueID() != projectHeaderTask.getUniqueID())
-                .sorted((t1, t2) -> Integer.compare(t1.getOutlineLevel(), t2.getOutlineLevel()))
-                .collect(Collectors.toList());
+                    .filter(t -> t.getUniqueID() != 0 && t.getUniqueID() != projectHeaderTask.getUniqueID())
+                    .sorted((t1, t2) -> Integer.compare(t1.getOutlineLevel(), t2.getOutlineLevel()))
+                    .collect(Collectors.toList());
 
             System.out.println("Iniciando criação de " + sortedTasks.size() + " tarefas...");
-            
-            for(Task task : sortedTasks) {
+
+            for (Task task : sortedTasks) {
                 Map<String, Object> taskValues = new HashMap<>();
                 taskValues.put("name", task.getName());
                 taskValues.put("project_id", odooProjectId);
@@ -128,16 +126,16 @@ public class MppController {
                 int newOdooTaskId = odooService.create("project.task", taskValues);
                 mppToOdooIdMap.put(task.getUniqueID(), newOdooTaskId);
             }
-            
+
             System.out.println("\nIniciando criação de dependências entre tarefas...");
             for (Task task : sortedTasks) {
                 List<Relation> predecessors = task.getPredecessors();
                 if (predecessors != null && !predecessors.isEmpty()) {
                     List<Integer> predecessorOdooIds = predecessors.stream()
-                        .map(relation -> relation.getTargetTask().getUniqueID())
-                        .map(mppToOdooIdMap::get)
-                        .filter(Objects::nonNull)
-                        .collect(Collectors.toList());
+                            .map(relation -> relation.getTargetTask().getUniqueID())
+                            .map(mppToOdooIdMap::get)
+                            .filter(Objects::nonNull)
+                            .collect(Collectors.toList());
                     if (!predecessorOdooIds.isEmpty()) {
                         Integer currentOdooId = mppToOdooIdMap.get(task.getUniqueID());
                         Map<String, Object> dependencyValues = new HashMap<>();
