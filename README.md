@@ -12,9 +12,9 @@ Após o processamento, o arquivo `.mpp` é movido para a subpasta `processados`,
 
 ## 📁 Padrão de Nomenclatura
 
-Os arquivos `.mpp` devem seguir o padrão de nome:
+Os arquivos `.mpp` devem seguir o padrão de nome:  departamento_nome_do_projeto.mpp
 
-<departamento>_<nome_do_projeto>.mpp
+
 
 **Exemplo:**
 
