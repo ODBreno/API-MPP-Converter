@@ -51,11 +51,16 @@ Substitua os valores acima conforme o ambiente de destino (produção ou homolog
 
 As seguintes variáveis devem ser definidas no ambiente ou arquivo .env:
 
-Variável	              Descrição
+Variável  -  Descrição
+
 ODOO_HOST  - 	IP ou hostname do servidor Odoo
+
 ODOO_PORT  -  Porta de acesso da API do Odoo
+
 ODOO_DB  -  	Nome do banco de dados do Odoo
+
 ODOO_USER  -  E-mail do usuário Odoo com acesso
+
 ODOO_PASSWORD  -  Senha do usuário Odoo
 
 🗃 Estrutura da Pasta
