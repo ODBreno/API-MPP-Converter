@@ -47,7 +47,7 @@ docker run -d \
 
 Substitua os valores acima conforme o ambiente de destino (produção ou homologação).
 
-🛠 Variáveis de Ambiente
+## 🛠 Variáveis de Ambiente
 
 As seguintes variáveis devem ser definidas no ambiente ou arquivo .env:
 
@@ -63,7 +63,7 @@ ODOO_USER  -  E-mail do usuário Odoo com acesso
 
 ODOO_PASSWORD  -  Senha do usuário Odoo
 
-🗃 Estrutura da Pasta
+## 🗃 Estrutura da Pasta
 
 A API espera a seguinte estrutura de pastas:
 
@@ -75,7 +75,7 @@ Geoprocessamento_RIMU.mpp
 └──
 processados/
 
-🤝 Integração com n8n
+## 🤝 Integração com n8n
 
 O n8n é responsável por agendar e acionar a execução periódica da API, garantindo que novos arquivos .mpp sejam processados automaticamente sem intervenção manual.
 
